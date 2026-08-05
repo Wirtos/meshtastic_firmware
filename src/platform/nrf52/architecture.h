@@ -113,6 +113,8 @@
 #define HW_VENDOR meshtastic_HardwareModel_WIO_WM1110
 #elif defined(TRACKER_T1000_E)
 #define HW_VENDOR meshtastic_HardwareModel_TRACKER_T1000_E
+#elif defined(MESH_TRACKER_X1)
+#define HW_VENDOR meshtastic_HardwareModel_MESH_TRACKER_X1
 #elif defined(ME25LS01_4Y10TD)
 #define HW_VENDOR meshtastic_HardwareModel_ME25LS01_4Y10TD
 #elif defined(MS24SF1)
@@ -121,6 +123,8 @@
 #define HW_VENDOR meshtastic_HardwareModel_PRIVATE_HW
 #elif defined(HELTEC_T114)
 #define HW_VENDOR meshtastic_HardwareModel_HELTEC_MESH_NODE_T114
+#elif defined(HELTEC_MESH_NODE_T1)
+#define HW_VENDOR meshtastic_HardwareModel_HELTEC_MESH_NODE_T1
 #elif defined(MESHLINK)
 #define HW_VENDOR meshtastic_HardwareModel_MESHLINK
 #elif defined(SEEED_XIAO_NRF52840_KIT)
