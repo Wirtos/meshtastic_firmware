@@ -1,6 +1,7 @@
 #include "configuration.h"
 #include "main.h"
 #include "memory/MemAudit.h"
+#include <new>
 #if USE_TFTDISPLAY
 
 #if ARCH_PORTDUINO
@@ -1219,15 +1220,6 @@ TFTDisplay::TFTDisplay(uint8_t address, int sda, int scl, OLEDDISPLAY_GEOMETRY g
 
 TFTDisplay::~TFTDisplay()
 {
-    // Clean up allocated line pixel buffer to prevent memory leak
-    if (linePixelBuffer != nullptr) {
-        free(linePixelBuffer);
-        linePixelBuffer = nullptr;
-    }
-    if (repaintChunkBuffer != nullptr) {
-        free(repaintChunkBuffer);
-        repaintChunkBuffer = nullptr;
-    }
     memaudit::set("display", 0);
 }
 
@@ -1279,7 +1271,7 @@ void TFTDisplay::display(bool fromBlank)
                 y_byteIndex = (y / 8) * displayWidth;
                 y_byteMask = (1 << (y & 7));
 
-                uint16_t *chunkRow = repaintChunkBuffer + (row * displayWidth);
+                uint16_t *chunkRow = repaintChunkBuffer.get() + (row * displayWidth);
 
                 // Step 1: fill the whole row with the default colors. No per-pixel
                 // region scan, so background pixels (the bulk of the screen) are O(1).
@@ -1308,9 +1300,9 @@ void TFTDisplay::display(bool fromBlank)
                 }
             }
 #if defined(HACKADAY_COMMUNICATOR)
-            tft->draw16bitBeRGBBitmap(0, yStart, repaintChunkBuffer, displayWidth, rowsThisChunk);
+            tft->draw16bitBeRGBBitmap(0, yStart, repaintChunkBuffer.get(), displayWidth, rowsThisChunk);
 #else
-            tft->pushImage(0, yStart, displayWidth, rowsThisChunk, repaintChunkBuffer);
+            tft->pushImage(0, yStart, displayWidth, rowsThisChunk, repaintChunkBuffer.get());
 #endif
         }
 
@@ -1652,8 +1644,8 @@ bool TFTDisplay::connect()
 #endif
     tft->fillScreen(getThemeDefaultOffColor());
 
-    if (this->linePixelBuffer == NULL) {
-        this->linePixelBuffer = (uint16_t *)malloc(sizeof(uint16_t) * displayWidth);
+    if (!this->linePixelBuffer) {
+        this->linePixelBuffer.reset(new (std::nothrow) uint16_t[displayWidth]);
 
         if (!this->linePixelBuffer) {
             LOG_ERROR("Not enough memory to create TFT line buffer");
@@ -1661,8 +1653,8 @@ bool TFTDisplay::connect()
         }
         memaudit::add("display", sizeof(uint16_t) * displayWidth);
     }
-    if (this->repaintChunkBuffer == NULL) {
-        this->repaintChunkBuffer = (uint16_t *)malloc(sizeof(uint16_t) * displayWidth * kFullRepaintChunkRows);
+    if (!this->repaintChunkBuffer) {
+        this->repaintChunkBuffer.reset(new (std::nothrow) uint16_t[displayWidth * kFullRepaintChunkRows]);
 
         if (!this->repaintChunkBuffer) {
             LOG_ERROR("Not enough memory to create TFT repaint chunk buffer");
