@@ -1,0 +1,43 @@
+diff --git a/src/mesh/RadioInterface.cpp b/src/mesh/RadioInterface.cpp
+index 58bd498c5..d05cea56b 100644
+--- a/src/mesh/RadioInterface.cpp
++++ b/src/mesh/RadioInterface.cpp
+@@ -117,7 +117,7 @@ const RegionInfo regions[] = {
+         https://www.etsi.org/deliver/etsi_en/300200_300299/30022002/03.02.01_60/en_30022002v030201p.pdf
+         FIXME: https://github.com/meshtastic/firmware/issues/3371
+      */
+-    RDEF(EU_433, 433.0f, 434.0f, 10, 10, false, false, PROFILE_STD, PRESET(LONG_FAST), 0),
++    RDEF(EU_433, 433.0f, 434.0f, 10, 30, false, false, PROFILE_STD, PRESET(LONG_FAST), 0),
+     /*
+         https://www.thethingsnetwork.org/docs/lorawan/duty-cycle/
+         https://www.thethingsnetwork.org/docs/lorawan/regional-parameters/
+@@ -140,9 +140,9 @@ const RegionInfo regions[] = {
+         Channel centres at 869.442/869.525/869.608 MHz,
+         10.4 kHz padding on channels, 27 dBm, duty cycle 10%
+     */
+-    RDEF(EU_868, 869.4f, 869.65f, 10, 27, false, false, PROFILE_EU868, PRESET(LONG_FAST), 0),
+-    RDEF(EU_866, 865.6f, 867.6f, 2.5, 27, false, false, PROFILE_LITE, PRESET(LITE_FAST), 0),
+-    RDEF(EU_N_868, 869.4f, 869.65f, 10, 27, false, false, PROFILE_NARROW, PRESET(NARROW_SLOW), 1),
++    RDEF(EU_868, 869.4f, 869.65f, 10, 30, false, false, PROFILE_EU868, PRESET(LONG_FAST), 0),
++    RDEF(EU_866, 865.6f, 867.6f, 2.5, 30, false, false, PROFILE_LITE, PRESET(LITE_FAST), 0),
++    RDEF(EU_N_868, 869.4f, 869.65f, 10, 30, false, false, PROFILE_NARROW, PRESET(NARROW_SLOW), 1),
+ 
+     /*
+         https://lora-alliance.org/wp-content/uploads/2020/11/lorawan_regional_parameters_v1.0.3reva_0.pdf
+@@ -214,14 +214,14 @@ const RegionInfo regions[] = {
+         433,05-434,7 Mhz 10 mW
+         https://zakon.rada.gov.ua/laws/show/262-2026-п
+     */
+-    RDEF(UA_433, 433.0f, 434.7f, 10, 10, false, false, PROFILE_STD, PRESET(LONG_FAST), 0),
++    RDEF(UA_433, 433.0f, 434.7f, 10, 30, false, false, PROFILE_STD, PRESET(LONG_FAST), 0),
+ 
+     /*
+         Malaysia
+         433 - 435 MHz at 100mW, no restrictions.
+         https://www.mcmc.gov.my/skmmgovmy/media/General/pdf/Short-Range-Devices-Specification.pdf
+     */
+-    RDEF(MY_433, 433.0f, 435.0f, 100, 20, false, false, PROFILE_STD, PRESET(LONG_FAST), 0),
++    RDEF(MY_433, 433.0f, 435.0f, 100, 30, false, false, PROFILE_STD, PRESET(LONG_FAST), 0),
+ 
+     /*
+         Malaysia
