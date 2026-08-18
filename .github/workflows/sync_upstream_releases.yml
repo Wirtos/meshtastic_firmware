@@ -131,6 +131,11 @@ jobs:
           pio_env: t-echo
           pio_target: build
 
+      - name: Preserve t-echo artifacts
+        if: env.INCLUDE_FIRMWARE == 'true'
+        run: |
+          mkdir -p dist/t-echo && cp -r release/* dist/t-echo/
+
       - name: Build heltec-v3 (esp32s3)
         if: env.INCLUDE_FIRMWARE == 'true'
         uses: meshtastic/gh-action-firmware@main
@@ -139,6 +144,11 @@ jobs:
           pio_env: heltec-v3
           pio_target: build
 
+      - name: Preserve heltec-v3 artifacts
+        if: env.INCLUDE_FIRMWARE == 'true'
+        run: |
+          mkdir -p dist/heltec-v3 && cp -r release/* dist/heltec-v3/
+
       - name: Build tbeam (esp32)
         if: env.INCLUDE_FIRMWARE == 'true'
         uses: meshtastic/gh-action-firmware@main
@@ -146,6 +156,11 @@ jobs:
           pio_platform: esp32
           pio_env: tbeam
           pio_target: build
+
+      - name: Preserve tbeam artifacts
+        if: env.INCLUDE_FIRMWARE == 'true'
+        run: |
+          mkdir -p dist/tbeam && cp -r release/* dist/tbeam/
 
       - name: Create release for ${{ needs.detect.outputs.newest_tag }}
         env:
@@ -167,10 +182,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ needs.detect.outputs.newest_tag }}"
-          ls -la release/
           uploads=()
-          for f in release/firmware-*.bin release/firmware-*.uf2 release/firmware-*.hex release/firmware-*.mt.json release/device-install.sh release/device-install.bat release/device-update.sh release/device-update.bat; do
-            [ -f "$f" ] && uploads+=("$f")
+          for d in dist/*/; do
+            board=$(basename "$d")
+            for f in "$d"firmware-*; do
+              [ -f "$f" ] && uploads+=("$f")
+            done
+            # device scripts collide across boards; prefix with the board name
+            for f in "$d"device-install.sh "$d"device-install.bat "$d"device-update.sh "$d"device-update.bat; do
+              [ -f "$f" ] && {
+                prefixed="/tmp/${board}-$(basename "$f")"
+                cp "$f" "$prefixed"
+                uploads+=("$prefixed")
+              }
+            done
           done
           echo "Uploading ${#uploads[@]} file(s):"
           printf '%s\n' "${uploads[@]}"
