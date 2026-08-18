@@ -113,9 +113,15 @@ jobs:
       - name: Apply local patch
         run: |
           git fetch origin "${PATCH_BRANCH}"
-          git show "origin/${PATCH_BRANCH}:patches/0001-radiointerface-max-tx.patch" > /tmp/radio.patch
+          # RadioInterface.cpp has two RDEF layouts across releases; pick the matching patch
+          if grep -q 'profile_ptr' src/mesh/RadioInterface.cpp; then
+            PATCH=patches/0001-radiointerface-max-tx.patch
+          else
+            PATCH=patches/0002-radiointerface-max-tx-tag.patch
+          fi
+          git show "origin/${PATCH_BRANCH}:${PATCH}" > /tmp/radio.patch
           git apply --3way --whitespace=nowarn /tmp/radio.patch
-          echo "Applied patches/0001-radiointerface-max-tx.patch to $(git rev-parse --short HEAD)"
+          echo "Applied ${PATCH} to $(git rev-parse --short HEAD)"
 
       - name: Build t-echo (nrf52840)
         if: env.INCLUDE_FIRMWARE == 'true'
