@@ -1,0 +1,180 @@
+name: Sync releases from upstream
+
+# Builds and publishes releases in this fork for upstream releases from now on:
+# each run targets the single latest meshtastic/firmware release and, if this
+# fork doesn't have it yet, builds it (tag + patches/0001-radiointerface-max-tx.patch)
+# and attaches the T-Echo / Heltec V3 / T-Beam firmware for download.
+#
+# The first run - or a manual "Run workflow" - immediately builds the latest
+# existing upstream release, so you get a release with your changes without
+# waiting for a new upstream tag. Older releases are not mirrored.
+#
+# The patch is applied with git apply --3way. If upstream ever moves the lines
+# the patch touches, the build fails loudly - regenerate the patch from the
+# current tree and push it to the PATCH_BRANCH below.
+#
+# Forks cannot receive upstream events directly, so this polls the upstream
+# releases API on a schedule. Run it any time with the "Run workflow" button.
+
+on:
+  schedule:
+    - cron: 0 */6 * * * # every 6 hours
+  workflow_dispatch:
+    inputs:
+      # trunk-ignore(checkov/CKV_GHA_7): manual-run toggles, never fed into a build
+      include_firmware:
+        description: Build and attach firmware binaries (T-Echo, Heltec V3, T-Beam) to the newest synced release
+        type: boolean
+        default: true
+      include_prereleases:
+        description: Include upstream alpha/beta pre-releases
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-releases
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: meshtastic/firmware
+  PATCH_BRANCH: develop # fork branch holding patches/0001-radiointerface-max-tx.patch
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      newest_tag: ${{ steps.detect.outputs.newest_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream tags
+        run: |
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream https://github.com/meshtastic/firmware.git
+          git fetch upstream --tags --force
+
+      - name: Detect latest upstream release
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INCLUDE_PRERELEASES: ${{ github.event.inputs.include_prereleases || 'true' }}
+        run: |
+          set -euo pipefail
+
+          # Latest applicable upstream release tag (newest first; drafts are
+          # never exposed via the API, prereleases only when requested)
+          JQ_FILTER='.[] | select(.draft == false) | .tag_name'
+          if [ "$INCLUDE_PRERELEASES" != "true" ]; then
+            JQ_FILTER='.[] | select(.draft == false and .prerelease == false) | .tag_name'
+          fi
+
+          LATEST=$(gh api "repos/${UPSTREAM_REPO}/releases" --paginate --jq "$JQ_FILTER" | head -n 1)
+
+          if [ -z "$LATEST" ]; then
+            echo "No upstream releases found."
+            echo "newest_tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Skip if this fork already has that release (we only build from now on)
+          if gh release view "$LATEST" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Latest upstream release $LATEST is already published here; nothing to do."
+            echo "newest_tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Latest upstream release not yet published here: $LATEST"
+
+          # Push its tag so the build job can check it out
+          git push origin "refs/tags/$LATEST" || true
+
+          echo "newest_tag=$LATEST" >> "$GITHUB_OUTPUT"
+
+  build-release:
+    needs: detect
+    if: needs.detect.outputs.newest_tag != ''
+    runs-on: ubuntu-latest
+    env:
+      INCLUDE_FIRMWARE: ${{ github.event.inputs.include_firmware || 'true' }}
+    steps:
+      - name: Checkout ${{ needs.detect.outputs.newest_tag }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.detect.outputs.newest_tag }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Apply local patch
+        run: |
+          git fetch origin "${PATCH_BRANCH}"
+          git show "origin/${PATCH_BRANCH}:patches/0001-radiointerface-max-tx.patch" > /tmp/radio.patch
+          git apply --3way --whitespace=nowarn /tmp/radio.patch
+          echo "Applied patches/0001-radiointerface-max-tx.patch to $(git rev-parse --short HEAD)"
+
+      - name: Build t-echo (nrf52840)
+        if: env.INCLUDE_FIRMWARE == 'true'
+        uses: meshtastic/gh-action-firmware@main
+        with:
+          pio_platform: nrf52840
+          pio_env: t-echo
+          pio_target: build
+
+      - name: Build heltec-v3 (esp32s3)
+        if: env.INCLUDE_FIRMWARE == 'true'
+        uses: meshtastic/gh-action-firmware@main
+        with:
+          pio_platform: esp32s3
+          pio_env: heltec-v3
+          pio_target: build
+
+      - name: Build tbeam (esp32)
+        if: env.INCLUDE_FIRMWARE == 'true'
+        uses: meshtastic/gh-action-firmware@main
+        with:
+          pio_platform: esp32
+          pio_env: tbeam
+          pio_target: build
+
+      - name: Create release for ${{ needs.detect.outputs.newest_tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ needs.detect.outputs.newest_tag }}"
+          gh api "repos/${UPSTREAM_REPO}/releases/tags/${TAG}" --jq '.body' > /tmp/notes.md
+          title=$(gh api "repos/${UPSTREAM_REPO}/releases/tags/${TAG}" --jq '.name')
+          if [ -n "$title" ] && [ "$title" != "null" ]; then
+            gh release create "$TAG" --title "$title" --notes-file /tmp/notes.md
+          else
+            gh release create "$TAG" --notes-file /tmp/notes.md
+          fi
+          echo "Created release for $TAG"
+
+      - name: Upload firmware binaries
+        if: env.INCLUDE_FIRMWARE == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ needs.detect.outputs.newest_tag }}"
+          ls -la release/
+          uploads=()
+          for f in release/firmware-*.bin release/firmware-*.uf2 release/firmware-*.hex release/firmware-*.mt.json release/device-install.sh release/device-install.bat release/device-update.sh release/device-update.bat; do
+            [ -f "$f" ] && uploads+=("$f")
+          done
+          echo "Uploading ${#uploads[@]} file(s):"
+          printf '%s\n' "${uploads[@]}"
+          gh release upload "$TAG" "${uploads[@]}" --clobber
+
+      - name: Summary
+        if: always()
+        run: |
+          cat <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          ## Upstream release sync
+          - Newest release: **${{ needs.detect.outputs.newest_tag }}**
+          - Source: [meshtastic/firmware](https://github.com/meshtastic/firmware/releases)
+          EOF

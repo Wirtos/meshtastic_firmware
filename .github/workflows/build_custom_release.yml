@@ -1,0 +1,107 @@
+name: Build custom release
+
+# Builds a one-off release from any branch or tag you choose, with your local
+# patch applied, and publishes it under a custom name/tag. Independent of the
+# automatic upstream release sync - use this when you want a release of your
+# own changes right now (dev build, test build, etc.).
+#
+# The patch file is fetched from the PATCH_BRANCH below. If the ref you build
+# from already contains the change as a commit, turn apply_patch off.
+# The release name becomes the tag (spaces and other invalid characters are
+# replaced with dashes).
+
+on:
+  workflow_dispatch:
+    inputs:
+      # trunk-ignore(checkov/CKV_GHA_7): manual-run inputs, never fed into a build
+      release_name:
+        description: Release/tag name, e.g. my-firmware-1.0
+        required: true
+        type: string
+      ref:
+        description: Branch or tag to build from
+        required: true
+        default: develop
+        type: string
+      apply_patch:
+        description: Apply patches/0001-radiointerface-max-tx.patch on top of the ref
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-custom-release
+  cancel-in-progress: false
+
+env:
+  PATCH_BRANCH: develop # fork branch holding patches/0001-radiointerface-max-tx.patch
+
+jobs:
+  build-custom-release:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_NAME: ${{ github.event.inputs.release_name }}
+      APPLY_PATCH: ${{ github.event.inputs.apply_patch || 'true' }}
+    steps:
+      - name: Checkout ${{ github.event.inputs.ref }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Apply local patch
+        if: env.APPLY_PATCH == 'true'
+        run: |
+          git fetch origin "${PATCH_BRANCH}"
+          git show "origin/${PATCH_BRANCH}:patches/0001-radiointerface-max-tx.patch" > /tmp/radio.patch
+          git apply --3way --whitespace=nowarn /tmp/radio.patch
+          echo "Applied patches/0001-radiointerface-max-tx.patch to $(git rev-parse --short HEAD)"
+
+      - name: Build t-echo (nrf52840)
+        uses: meshtastic/gh-action-firmware@main
+        with:
+          pio_platform: nrf52840
+          pio_env: t-echo
+          pio_target: build
+
+      - name: Build heltec-v3 (esp32s3)
+        uses: meshtastic/gh-action-firmware@main
+        with:
+          pio_platform: esp32s3
+          pio_env: heltec-v3
+          pio_target: build
+
+      - name: Build tbeam (esp32)
+        uses: meshtastic/gh-action-firmware@main
+        with:
+          pio_platform: esp32
+          pio_env: tbeam
+          pio_target: build
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=$(printf '%s' "$RELEASE_NAME" | tr -cs 'A-Za-z0-9._-' '-')
+          TARGET=$(git rev-parse HEAD)
+          echo "Creating release $TAG at $TARGET"
+          gh release create "$TAG" --title "$RELEASE_NAME" --target "$TARGET" \
+            --notes "Custom build from ${{ github.event.inputs.ref }} @ $(git rev-parse --short HEAD)"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Upload firmware binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la release/
+          uploads=()
+          for f in release/firmware-*.bin release/firmware-*.uf2 release/firmware-*.hex release/firmware-*.mt.json release/device-install.sh release/device-install.bat release/device-update.sh release/device-update.bat; do
+            [ -f "$f" ] && uploads+=("$f")
+          done
+          echo "Uploading ${#uploads[@]} file(s):"
+          printf '%s\n' "${uploads[@]}"
+          gh release upload "$TAG" "${uploads[@]}" --clobber

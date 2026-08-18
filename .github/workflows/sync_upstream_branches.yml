@@ -1,0 +1,44 @@
+name: Sync fork branches with upstream
+
+# Keeps the fork's develop/master branches up to date with meshtastic/firmware
+# so the fork stays current for development.
+#
+# Your local change lives only in patches/0001-radiointerface-max-tx.patch
+# (committed as a file, not as code edits), so these merges never conflict:
+# upstream never touches that path. If a merge ever fails, resolve it locally
+# and push - the workflow just stops and reports the conflict.
+
+on:
+  schedule:
+    - cron: 0 */6 * * * # every 6 hours
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-branches
+  cancel-in-progress: false
+
+jobs:
+  sync-branches:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: [develop, master]
+    steps:
+      - name: Checkout ${{ matrix.branch }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.branch }}
+          fetch-depth: 0
+
+      - name: Merge upstream ${{ matrix.branch }}
+        run: |
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream https://github.com/meshtastic/firmware.git
+          git fetch upstream "${{ matrix.branch }}"
+          git merge "upstream/${{ matrix.branch }}" --no-edit
+          git push origin "${{ matrix.branch }}"
+          echo "Merged upstream/${{ matrix.branch }} into ${{ matrix.branch }}"
